@@ -19,7 +19,7 @@ class CoordinatorAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__("CoordinatorAgent", model="ministral")
+        super().__init__("CoordinatorAgent")
         self.change_reviewer = ChangeReviewAgent()
         self.pr_creator = IssuePRCreatorAgent()
         self.pr_improver = IssueImproverAgent()
@@ -53,6 +53,7 @@ WORKFLOW PATTERNS:
         create_type: str = "pr",
         ref1: Optional[str] = None,
         ref2: Optional[str] = None,
+        staged_only: bool = False,
         branch_name: Optional[str] = None,
         auto_approve: bool = False
     ) -> Dict[str, Any]:
@@ -78,7 +79,7 @@ WORKFLOW PATTERNS:
             review_result = self.change_reviewer.review_changes(
                 ref1=ref1,
                 ref2=ref2,
-                staged_only=False
+                staged_only=staged_only
             )
 
             if review_result["status"] == "error":
@@ -320,20 +321,101 @@ WORKFLOW PATTERNS:
                 "error": str(e)
             }
 
-    def get_workflow_status(self, workflow_data: Dict[str, Any]) -> Dict[str, str]:
+    def get_workflow_status(self, workflow: Dict[str, Any]) -> Dict[str, str]:
+        """Generate a human-readable status report from a workflow result."""
+        if not workflow:
+            return {"log": "No workflow data available."}
+
+        lines = []
+        if workflow.get("workflow_log"):
+            lines.append("Workflow Log:")
+            for entry in workflow.get("workflow_log", []):
+                lines.append(f"- {entry}")
+
+        if workflow.get("status"):
+            lines.append(f"Status: {workflow.get('status')}")
+        if workflow.get("error"):
+            lines.append(f"Error: {workflow.get('error')}")
+
+        return {"log": "\n".join(lines)}
+
+    def draft_from_instruction(self, instruction: str, is_issue: bool = False) -> Dict[str, Any]:
         """
-        Extract human-readable workflow status.
+        Draft issue or PR based on explicit instruction.
 
         Args:
-            workflow_data: Workflow result
+            instruction: User instruction for what to draft
+            is_issue: True for issue, False for PR
 
         Returns:
-            Status dictionary
+            Draft result with title, description, etc.
         """
-        return {
-            "status": workflow_data.get("status", "unknown"),
-            "workflow": workflow_data.get("workflow", "N/A"),
-            "log": "\n".join(workflow_data.get("workflow_log", [])),
-            "ready_to_execute": workflow_data.get("ready_to_create", False)
-            or workflow_data.get("ready_to_apply", False)
-        }
+        try:
+            if is_issue:
+                draft = self.pr_creator.draft_issue_from_instruction(
+                    instruction)
+            else:
+                draft = self.pr_creator.draft_pr_from_instruction(instruction)
+
+            return {
+                "status": "success",
+                "draft": draft
+            }
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def create_issue_from_draft(self, draft: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create GitHub issue from draft.
+
+        Args:
+            draft: Draft issue data
+
+        Returns:
+            Creation result
+        """
+        try:
+            result = self.pr_creator.create_issue(
+                title=draft["title"],
+                description=draft["description"],
+                labels=draft.get("labels", [])
+            )
+            return result
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def create_pr_from_draft(self, draft: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create GitHub PR from draft.
+
+        Args:
+            draft: Draft PR data
+
+        Returns:
+            Creation result
+        """
+        try:
+            # For PR, we need a branch name. Use a default or extract from draft
+            branch_name = draft.get("branch", "feature/draft")
+
+            result = self.pr_creator.create_pull_request(
+                title=draft["title"],
+                description=draft["description"],
+                head_branch=branch_name,
+                labels=draft.get("labels", [])
+            )
+            return result
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e)
+            }

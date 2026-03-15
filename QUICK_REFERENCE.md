@@ -22,8 +22,10 @@ python agent.py review --ref1 main --ref2 HEAD  # Compare commits
 ### Task 2: Create
 
 ```bash
-python agent.py create --type pr --branch feat/xyz   # Create PR
-python agent.py create --type issue                  # Create Issue
+python agent.py create --type pr --branch feat/xyz   # Review changes, draft + save PR (use approve to create)
+python agent.py create --type pr --branch feat/xyz --yes   # Review changes, draft + immediately create PR
+python agent.py create --type issue                  # Review changes, draft + save Issue (use approve to create)
+python agent.py create --type issue --yes             # Review changes, draft + immediately create Issue
 ```
 
 ### Task 3: Improve
@@ -58,7 +60,8 @@ GITHUB_PAT=your_token
 GITHUB_REPO_OWNER=username
 GITHUB_REPO_NAME=repo
 OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=ministral
+# Use the exact model name shown by `ollama list`, e.g. ministral-3:3b
+OLLAMA_MODEL=ministral-3:3b
 ```
 
 ## Execution Flow

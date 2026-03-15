@@ -16,7 +16,7 @@ class IssuePRCreatorAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__("IssuePRCreatorAgent", model="ministral")
+        super().__init__("IssuePRCreatorAgent")
         self.github = GitHubOps()
 
     def get_system_prompt(self) -> str:
@@ -39,31 +39,39 @@ Create clear, professional GitHub tickets that follow standards."""
 5. VALIDATE_CONTENT - Ensure quality and completeness
 6. GITHUB_CREATE - Actually create the ticket"""
 
-    def draft_issue(
-        self,
-        change_type: str,
-        summary: str,
-        analysis: str,
-        risk_level: str
-    ) -> Dict[str, Any]:
+    def _generate_structured_response(self, task: str) -> str:
+        """Generate a structured response directly from the LLM."""
+        prompt = f"""You are {self.name}.
+
+{self.get_system_prompt()}
+
+{self.get_available_tools()}
+
+{task}
+
+Respond exactly in the following format (do not include any extra text):
+TITLE: [title]
+DESCRIPTION:
+[description]
+LABELS: [label1, label2]
+REVIEWERS: [optional list]"""
+
+        response = self.llm.generate(prompt, temperature=self.temperature)
+        return response.get("response", "")
+
+    def draft_issue_from_instruction(self, instruction: str) -> Dict[str, Any]:
         """
-        Draft a GitHub Issue based on change analysis.
+        Draft a GitHub Issue based on explicit instruction.
 
         Args:
-            change_type: Type of change (feature/bugfix/refactor/etc)
-            summary: Summary of the change
-            analysis: Detailed analysis
-            risk_level: Risk assessment (low/medium/high)
+            instruction: User instruction for what to draft
 
         Returns:
             Draft issue with title, description, labels
         """
-        task = f"""Draft a GitHub Issue for this change:
+        task = f"""Draft a GitHub Issue based on this instruction:
 
-Change Type: {change_type}
-Risk Level: {risk_level}
-Summary: {summary}
-Analysis: {analysis}
+{instruction}
 
 Create a detailed GitHub issue with:
 1. Compelling title (short, descriptive)
@@ -80,11 +88,79 @@ DESCRIPTION:
 [full description with markdown]
 LABELS: [label1, label2, label3]"""
 
-        # Execute agent workflow
-        execution = self.execute(task)
+        # Generate draft using LLM and parse the output
+        response = self._generate_structured_response(task)
+        return self._parse_issue_draft({"reflection": {"decision": response}})
 
-        # Parse the draft
-        return self._parse_issue_draft(execution)
+    def draft_pr_from_instruction(self, instruction: str) -> Dict[str, Any]:
+        """
+        Draft a GitHub PR based on explicit instruction.
+
+        Args:
+            instruction: User instruction for what to draft
+
+        Returns:
+            Draft PR with title, description, labels
+        """
+        task = f"""Draft a GitHub Pull Request based on this instruction:
+
+{instruction}
+
+Create a professional GitHub PR with:
+1. Compelling title (short, descriptive)
+2. Well-structured description with sections:
+   - What Changed (overview of modifications)
+   - Why (reasoning and motivation)
+   - Testing (how to verify changes)
+   - Risk Assessment (potential issues)
+   - Checklist (review items)
+3. Suggested labels and reviewers
+
+Format your response as:
+TITLE: [PR title]
+DESCRIPTION:
+[full description with markdown]
+LABELS: [label1, label2, label3]
+REVIEWERS: [optional list]"""
+
+        # Generate draft using LLM and parse the output
+        response = self._generate_structured_response(task)
+        return self._parse_pr_draft({"reflection": {"decision": response}})
+
+    def draft_issue(
+        self,
+        change_type: str,
+        summary: str,
+        analysis: str,
+        risk_level: str
+    ) -> Dict[str, Any]:
+        """Draft a GitHub Issue based on change analysis."""
+        task = f"""Draft a GitHub Issue for this change:
+
+Change Type: {change_type}
+Risk Level: {risk_level}
+
+Summary: {summary}
+Analysis: {analysis}
+
+Create a clear and actionable GitHub issue with:
+1. A concise, descriptive title
+2. A structured description including:
+   - Overview
+   - Details
+   - Acceptance criteria
+   - Testing instructions (if applicable)
+3. Suggested labels
+
+Format your response as:
+TITLE: [issue title]
+DESCRIPTION:
+[full description with markdown]
+LABELS: [label1, label2, label3]"""  # noqa: E501
+
+        # Generate draft using LLM and parse the output
+        response = self._generate_structured_response(task)
+        return self._parse_issue_draft({"reflection": {"decision": response}})
 
     def draft_pull_request(
         self,
@@ -140,11 +216,9 @@ DESCRIPTION:
 LABELS: [label1, label2, label3]
 REVIEWERS: [optional list]"""
 
-        # Execute agent workflow
-        execution = self.execute(task)
-
-        # Parse the draft
-        return self._parse_pr_draft(execution)
+        # Generate draft using LLM and parse the output
+        response = self._generate_structured_response(task)
+        return self._parse_pr_draft({"reflection": {"decision": response}})
 
     def create_issue(
         self,
@@ -172,6 +246,16 @@ REVIEWERS: [optional list]"""
                 labels=labels or [],
                 assignee=assignee
             )
+
+            # Handle API wrapper result shape
+            if not result.get("success", False):
+                return {
+                    "status": "error",
+                    "action": "create_issue",
+                    "error": result.get("error") or "Unknown GitHub error",
+                    "details": result
+                }
+
             return {
                 "status": "success",
                 "action": "create_issue",
@@ -183,7 +267,7 @@ REVIEWERS: [optional list]"""
             return {
                 "status": "error",
                 "action": "create_issue",
-                "error": str(e)
+                "error": str(e) or repr(e)
             }
 
     def create_pull_request(
@@ -217,6 +301,15 @@ REVIEWERS: [optional list]"""
                 base=base_branch,
                 draft=draft
             )
+
+            if not result.get("success", False):
+                return {
+                    "status": "error",
+                    "action": "create_pull_request",
+                    "error": result.get("error") or "Unknown GitHub error",
+                    "details": result
+                }
+
             return {
                 "status": "success",
                 "action": "create_pull_request",
@@ -228,7 +321,7 @@ REVIEWERS: [optional list]"""
             return {
                 "status": "error",
                 "action": "create_pull_request",
-                "error": str(e)
+                "error": str(e) or repr(e)
             }
 
     def _parse_issue_draft(self, execution: Dict[str, Any]) -> Dict[str, str]:
@@ -247,14 +340,21 @@ REVIEWERS: [optional list]"""
         current_section = None
 
         for line in lines:
-            if "TITLE:" in line:
-                draft["title"] = line.split("TITLE:")[1].strip()
-            elif "DESCRIPTION:" in line:
+            # Normalize formatting (e.g., **TITLE:**, TITLE:, etc.)
+            normalized = line.strip().strip("* `")
+            upper = normalized.upper()
+
+            if upper.startswith("TITLE:"):
+                title = normalized.split("TITLE:", 1)[1].strip()
+                # Clean up common markdown decorations
+                title = title.strip("* `")
+                draft["title"] = title
+            elif upper.startswith("DESCRIPTION:"):
                 current_section = "description"
-            elif "LABELS:" in line:
+            elif upper.startswith("LABELS:"):
                 current_section = "labels"
-                labels_str = line.split("LABELS:")[1].strip()
-                draft["labels"] = [l.strip() for l in labels_str.split(",")]
+                labels_str = normalized.split("LABELS:", 1)[1].strip()
+                draft["labels"] = [l.strip("* `[]") for l in labels_str.split(",") if l.strip()]
             elif current_section == "description" and line.strip():
                 draft["description"] += line + "\n"
 
@@ -277,20 +377,26 @@ REVIEWERS: [optional list]"""
         current_section = None
 
         for line in lines:
-            if "TITLE:" in line:
-                draft["title"] = line.split("TITLE:")[1].strip()
-            elif "DESCRIPTION:" in line:
+            # Normalize formatting (e.g., **TITLE:**, TITLE:, etc.)
+            normalized = line.strip().strip("* `")
+            upper = normalized.upper()
+
+            if upper.startswith("TITLE:"):
+                title = normalized.split("TITLE:", 1)[1].strip()
+                title = title.strip("* `")
+                draft["title"] = title
+            elif upper.startswith("DESCRIPTION:"):
                 current_section = "description"
-            elif "LABELS:" in line:
+            elif upper.startswith("LABELS:"):
                 current_section = "labels"
-                labels_str = line.split("LABELS:")[1].strip()
-                draft["labels"] = [l.strip() for l in labels_str.split(",")]
-            elif "REVIEWERS:" in line:
+                labels_str = normalized.split("LABELS:", 1)[1].strip()
+                draft["labels"] = [l.strip("* `[]") for l in labels_str.split(",") if l.strip()]
+            elif upper.startswith("REVIEWERS:"):
                 current_section = "reviewers"
-                reviewers_str = line.split("REVIEWERS:")[1].strip()
+                reviewers_str = normalized.split("REVIEWERS:", 1)[1].strip()
                 if reviewers_str:
-                    draft["reviewers"] = [r.strip()
-                                          for r in reviewers_str.split(",")]
+                    draft["reviewers"] = [r.strip("* `")
+                                          for r in reviewers_str.split(",") if r.strip()]
             elif current_section == "description" and line.strip():
                 draft["description"] += line + "\n"
 

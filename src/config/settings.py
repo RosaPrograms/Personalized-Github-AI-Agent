@@ -12,7 +12,7 @@ class Settings:
 
     # Ollama Configuration
     OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "ministral")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "ministral-3:3b")
 
     # Agent Configuration
     AGENT_MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))

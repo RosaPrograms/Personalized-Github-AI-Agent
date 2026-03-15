@@ -89,7 +89,8 @@ GITHUB_REPO_OWNER=your_username
 GITHUB_REPO_NAME=your_repo
 
 OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=ministral
+# Use the exact model name shown by `ollama list`, e.g. ministral-3:3b
+OLLAMA_MODEL=ministral-3:3b
 
 AGENT_TEMPERATURE=0.3
 AGENT_MAX_ITERATIONS=5
@@ -395,7 +396,7 @@ GITHUB_REPO_NAME        # Repository name
 
 # Ollama (Defaults provided)
 OLLAMA_API_URL          # Default: http://localhost:11434
-OLLAMA_MODEL            # Default: ministral
+OLLAMA_MODEL            # Default: ministral-3:3b (run `ollama list` to see installed models)
 
 # Agent Behavior
 AGENT_MAX_ITERATIONS    # Default: 5 (max planning steps)
@@ -407,7 +408,7 @@ AGENT_TEMPERATURE       # Default: 0.3 (0=deterministic, 1=random)
 - [ ] Python venv created and activated
 - [ ] Dependencies installed (pip check shows no errors)
 - [ ] `.env` file configured with GitHub PAT
-- [ ] Ollama running with ministral model
+- [ ] Ollama running with ministral-3:3b model (or your chosen model from `ollama list`)
 - [ ] `python agent.py status` shows all green
 - [ ] `python agent.py review` works on test changes
 - [ ] Git repo initialized in project folder

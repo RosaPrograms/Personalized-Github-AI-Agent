@@ -22,12 +22,16 @@ class GitHubOps:
     ) -> Dict:
         """Create a GitHub issue"""
         try:
-            issue = self.repo.create_issue(
-                title=title,
-                body=body,
-                labels=labels or [],
-                assignee=assignee
-            )
+            kwargs = {
+                "title": title,
+                "body": body,
+            }
+            if labels:
+                kwargs["labels"] = labels
+            if assignee:
+                kwargs["assignee"] = assignee
+
+            issue = self.repo.create_issue(**kwargs)
             return {
                 "success": True,
                 "url": issue.html_url,
@@ -35,9 +39,14 @@ class GitHubOps:
                 "id": issue.id
             }
         except GithubException as e:
+            # PyGithub exceptions may not always define a string message.
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e) or repr(e),
+                "details": {
+                    "status": getattr(e, 'status', None),
+                    "data": getattr(e, 'data', None)
+                }
             }
 
     def create_pull_request(
@@ -66,7 +75,11 @@ class GitHubOps:
         except GithubException as e:
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e) or repr(e),
+                "details": {
+                    "status": getattr(e, 'status', None),
+                    "data": getattr(e, 'data', None)
+                }
             }
 
     def get_issue(self, issue_number: int) -> Dict:

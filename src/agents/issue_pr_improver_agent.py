@@ -16,7 +16,7 @@ class IssueImproverAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__("IssueImproverAgent", model="ministral")
+        super().__init__("IssueImproverAgent")
         self.github = GitHubOps()
 
     def get_system_prompt(self) -> str:
@@ -296,6 +296,8 @@ DETAILED_SUGGESTIONS:
 
     def _parse_improvements(self, execution: Dict[str, Any]) -> Dict[str, Any]:
         """Parse improvement suggestions from agent response"""
+        import re
+
         reflection = execution.get("reflection", {})
         decision = reflection.get("decision", "")
 
@@ -311,7 +313,7 @@ DETAILED_SUGGESTIONS:
             "details": ""
         }
 
-        # Extract sections
+        # Prefer structured output if the model followed the expected format
         lines = decision.split("\n")
         current_section = None
 
@@ -329,18 +331,69 @@ DETAILED_SUGGESTIONS:
                 improvements["issues"].append(line.strip())
             elif current_section == "suggestions":
                 if "Title:" in line:
-                    improvements["suggestions"]["title"] = line.split("Title:")[
-                        1].strip()
+                    improvements["suggestions"]["title"] = line.split("Title:")[1].strip()
                 elif "Description:" in line:
-                    improvements["suggestions"]["description"] = line.split("Description:")[
-                        1].strip()
+                    improvements["suggestions"]["description"] = line.split("Description:")[1].strip()
                 elif "Labels:" in line:
-                    improvements["suggestions"]["labels"] = line.split("Labels:")[
-                        1].strip()
+                    improvements["suggestions"]["labels"] = line.split("Labels:")[1].strip()
                 elif "Other:" in line:
-                    improvements["suggestions"]["other"] = line.split("Other:")[
-                        1].strip()
+                    improvements["suggestions"]["other"] = line.split("Other:")[1].strip()
             elif current_section == "details" and line.strip():
                 improvements["details"] += line + "\n"
 
+        # If we didn't get any structured suggestions, fall back to raw model output
+        if not any(
+            [improvements["issues"], improvements["suggestions"]["title"],
+             improvements["suggestions"]["description"], improvements["suggestions"]["labels"],
+             improvements["suggestions"]["other"], improvements["details"].strip()]
+        ):
+            improvements["analysis"] = reflection.get("analysis", "").strip() or improvements["analysis"]
+            improvements["details"] = decision.strip() or improvements["details"]
+
+            # Try to extract common suggestion patterns from the raw decision text
+            for field in ["Title", "Description", "Labels", "Other"]:
+                match = re.search(fr"{field}:\s*(.+)", decision, re.IGNORECASE)
+                if match:
+                    improvements["suggestions"][field.lower()] = match.group(1).strip()
+
+            # Aggregate step-level results if available
+            for result in execution.get("results", []):
+                if isinstance(result, str) and result.strip():
+                    improvements["issues"].append(result.strip())
+
+            # Try to extract structured suggestions from step output
+            for result in execution.get("results", []):
+                if not isinstance(result, str):
+                    continue
+                if "SUGGESTED_IMPROVEMENTS:" in result:
+                    current_section = None
+                    for line in result.splitlines():
+                        if "SUGGESTED_IMPROVEMENTS:" in line:
+                            current_section = "suggestions"
+                        elif current_section == "suggestions":
+                            # Support both plain and markdown-bold field names (e.g. "- **Title**: ...")
+                            if "Title" in line:
+                                match = re.search(r"\*\*Title\*\*\s*:\s*(.*)", line)
+                                if match:
+                                    improvements["suggestions"]["title"] = match.group(1).strip()
+                                else:
+                                    improvements["suggestions"]["title"] = line.split("Title:")[-1].strip()
+                            elif "Description" in line:
+                                match = re.search(r"\*\*Description\*\*\s*:\s*(.*)", line)
+                                if match:
+                                    improvements["suggestions"]["description"] = match.group(1).strip()
+                                else:
+                                    improvements["suggestions"]["description"] = line.split("Description:")[-1].strip()
+                            elif "Labels" in line:
+                                match = re.search(r"\*\*Labels\*\*\s*:\s*(.*)", line)
+                                if match:
+                                    improvements["suggestions"]["labels"] = match.group(1).strip()
+                                else:
+                                    improvements["suggestions"]["labels"] = line.split("Labels:")[-1].strip()
+                            elif "Other" in line:
+                                match = re.search(r"\*\*Other\*\*\s*:\s*(.*)", line)
+                                if match:
+                                    improvements["suggestions"]["other"] = match.group(1).strip()
+                                else:
+                                    improvements["suggestions"]["other"] = line.split("Other:")[-1].strip()
         return improvements

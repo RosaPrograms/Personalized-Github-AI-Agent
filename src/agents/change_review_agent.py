@@ -16,7 +16,7 @@ class ChangeReviewAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__("ChangeReviewAgent", model="ministral")
+        super().__init__("ChangeReviewAgent")
         self.git = GitOps()
 
     def get_system_prompt(self) -> str:

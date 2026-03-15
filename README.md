@@ -80,8 +80,14 @@ python agent.py review --ref1 main --ref2 HEAD
 # Create PR from changes (with review workflow)
 python agent.py create --type pr --branch feature/my-feature
 
+# Create PR from changes and create immediately (no approval step)
+python agent.py create --type pr --branch feature/my-feature --yes
+
 # Create Issue from changes
 python agent.py create --type issue
+
+# Create Issue from changes and create immediately
+python agent.py create --type issue --yes
 
 # Analyze specific commit range
 python agent.py create --type pr --ref1 main --ref2 HEAD
@@ -167,7 +173,8 @@ GITHUB_PAT=your_token
 GITHUB_REPO_OWNER=username
 GITHUB_REPO_NAME=repo_name
 OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=ministral
+# Use the exact model name shown by `ollama list`, e.g. ministral-3:3b
+OLLAMA_MODEL=ministral-3:3b
 AGENT_TEMPERATURE=0.3
 ```
 

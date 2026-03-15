@@ -121,6 +121,10 @@ Be direct and structured."""
             elif current_key and line.strip():
                 result[current_key] += " " + line.strip()
 
+        # If the model didn't follow the structured format, fall back to using the full text as the decision
+        if not result["decision"].strip() and text.strip():
+            result["decision"] = text.strip()
+
         return result
 
     def execute(self, task: str) -> Dict[str, Any]:
